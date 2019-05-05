@@ -47,12 +47,12 @@
 #define FRAME_HEIGHT0 120
 
 #define VIDEO_DEVICE1 "/dev/video2" // color visible image
-#define FRAME_WIDTH1 640//1440//640
-#define FRAME_HEIGHT1 480//1080//480
+#define VISUAL_FRAME_WIDTH 640//1440//640
+#define VISUAL_FRAME_HEIGHT 480//1080//480
 
 #define VIDEO_DEVICE2 "/dev/video3" // colorized thermal image
-#define FRAME_WIDTH2 160
-#define FRAME_HEIGHT2 128
+#define THERMAL_FRAME_WIDTH 160
+#define THERMAL_FRAME_HEIGHT 120
 
 #define FRAME_FORMAT0 V4L2_PIX_FMT_GREY
 #define FRAME_FORMAT1 V4L2_PIX_FMT_RGB24 //MJPEG
@@ -127,7 +127,7 @@ void font_write(unsigned char *fb, int x, int y, const char *string)
         //	fb[(y+ry) * 160 + (x + rx)] = v ? 0 : 0xFF;                       // black / white
         //	fb[(y+rx) * 160 + (x + ry)] = v ? 0 : 0xFF;                       // black / white
 
-        fb[(y + rx) * 160 + (x + ry)] = v ? 0 : fb[(y + rx) * 160 + (x + ry)]; // transparent
+        fb[(y + rx) * THERMAL_FRAME_WIDTH + (x + ry)] = v ? 0 : fb[(y + rx) * THERMAL_FRAME_WIDTH + (x + ry)]; // transparent
       }
     }
     string++;
@@ -198,12 +198,12 @@ void startv4l2()
 
   ret_code = ioctl(fdwr1, VIDIOC_G_FMT, &vid_format1);
 
-  linewidth1 = FRAME_WIDTH1;
-  framesize1 = FRAME_WIDTH1 * FRAME_HEIGHT1 * 1; // 8 Bit ??
+  linewidth1 = VISUAL_FRAME_WIDTH;
+  framesize1 = VISUAL_FRAME_WIDTH * VISUAL_FRAME_HEIGHT * 1; // 8 Bit ??
 
   vid_format1.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-  vid_format1.fmt.pix.width = FRAME_WIDTH1;
-  vid_format1.fmt.pix.height = FRAME_HEIGHT1;
+  vid_format1.fmt.pix.width = VISUAL_FRAME_WIDTH;
+  vid_format1.fmt.pix.height = VISUAL_FRAME_HEIGHT;
   vid_format1.fmt.pix.pixelformat = FRAME_FORMAT1;
   vid_format1.fmt.pix.sizeimage = framesize1;
   vid_format1.fmt.pix.field = V4L2_FIELD_NONE;
@@ -229,12 +229,12 @@ void startv4l2()
 
   ret_code = ioctl(fdwr2, VIDIOC_G_FMT, &vid_format2);
 
-  linewidth2 = FRAME_WIDTH2;
-  framesize2 = FRAME_WIDTH2 * FRAME_HEIGHT2 * 3; // 8x8x8 Bit
+  linewidth2 = THERMAL_FRAME_WIDTH;
+  framesize2 = THERMAL_FRAME_WIDTH * THERMAL_FRAME_HEIGHT * 3; // 8x8x8 Bit
 
   vid_format2.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-  vid_format2.fmt.pix.width = FRAME_WIDTH2;
-  vid_format2.fmt.pix.height = FRAME_HEIGHT2;
+  vid_format2.fmt.pix.width = THERMAL_FRAME_WIDTH;
+  vid_format2.fmt.pix.height = THERMAL_FRAME_HEIGHT;
   vid_format2.fmt.pix.pixelformat = FRAME_FORMAT2;
   vid_format2.fmt.pix.sizeimage = framesize2;
   vid_format2.fmt.pix.field = V4L2_FIELD_NONE;
@@ -300,7 +300,7 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
   uint32_t JpgSize = buf85[16] + (buf85[17] << 8) + (buf85[18] << 16) + (buf85[19] << 24);
   uint32_t StatusSize = buf85[20] + (buf85[21] << 8) + (buf85[22] << 16) + (buf85[23] << 24);
 
-  printf("FrameSize= %d (+28=%d), ThermalSize %d, JPG %d, StatusSize %d, Pointer %d\n",FrameSize,FrameSize+28, ThermalSize, JpgSize,StatusSize,buf85pointer);
+  // printf("FrameSize= %d (+28=%d), ThermalSize %d, JPG %d, StatusSize %d, Pointer %d\n",FrameSize,FrameSize+28, ThermalSize, JpgSize,StatusSize,buf85pointer);
 
   if ((FrameSize + 28) > (buf85pointer))
   {
@@ -325,14 +325,14 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
 
   buf85pointer = 0;
 
-  unsigned short pix[160 * 120]; // original Flir 16 Bit RAW
+  unsigned short pix[THERMAL_FRAME_WIDTH * THERMAL_FRAME_HEIGHT]; // original Flir 16 Bit RAW
   int x, y;
   unsigned char *fb_proc, *fb_proc2;
 
-  fb_proc = (unsigned char*)malloc(160 * 128);     // 8 Bit gray buffer really needs only 160 x 120
-  memset(fb_proc, 128, 160 * 128); // sizeof(fb_proc) doesn't work, value depends from LUT
+  fb_proc = (unsigned char*)malloc(THERMAL_FRAME_WIDTH * THERMAL_FRAME_HEIGHT);     // 8 Bit gray buffer really needs only 160 x 120
+  memset(fb_proc, THERMAL_FRAME_HEIGHT, THERMAL_FRAME_WIDTH * THERMAL_FRAME_HEIGHT); // sizeof(fb_proc) doesn't work, value depends from LUT
 
-  fb_proc2 = (unsigned char*)malloc(160 * 128 * 3); // 8x8x8  Bit RGB buffer
+  fb_proc2 = (unsigned char*)malloc(THERMAL_FRAME_WIDTH * THERMAL_FRAME_HEIGHT * 3); // 8x8x8  Bit RGB buffer
 
   int min = 0x10000, max = 0;
   float rms = 0;
@@ -340,15 +340,15 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
   // Make a unsigned short array from what comes from the thermal frame
   // find the max, min and RMS (not used yet) values of the array
   int maxx, maxy;
-  for (y = 0; y < 120; ++y)
+  for (y = 0; y < THERMAL_FRAME_HEIGHT; ++y)
   {
-    for (x = 0; x < 160; ++x)
+    for (x = 0; x < THERMAL_FRAME_WIDTH; ++x)
     {
       if (x < 80)
         v = buf85[2 * (y * 164 + x) + 32] + 256 * buf85[2 * (y * 164 + x) + 33];
       else
         v = buf85[2 * (y * 164 + x) + 32 + 4] + 256 * buf85[2 * (y * 164 + x) + 33 + 4];
-      pix[y * 160 + x] = v; // unsigned char!!
+      pix[y * THERMAL_FRAME_WIDTH + x] = v; // unsigned char!!
 
       if (v < min)
         min = v;
@@ -372,14 +372,14 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
     delta = 1; // if max = min we have divide by zero
   int scale = 0x10000 / delta;
 
-  for (y = 0; y < 120; ++y) //120
+  for (y = 0; y < THERMAL_FRAME_HEIGHT; ++y) //120
   {
-    for (x = 0; x < 160; ++x)
+    for (x = 0; x < THERMAL_FRAME_WIDTH; ++x)
     { //160
-      int v = (pix[y * 160 + x] - min) * scale >> 8;
+      int v = (pix[y * THERMAL_FRAME_WIDTH + x] - min) * scale >> 8;
 
       // fb_proc is the gray scale frame buffer
-      fb_proc[y * 160 + x] = v; // unsigned char!!
+      fb_proc[y * THERMAL_FRAME_WIDTH + x] = v; // unsigned char!!
     }
   }
 
@@ -391,7 +391,7 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
   strftime(st1, 60, "%H:%M:%S", loctime);
 
   // calc medium of 2x2 center pixels
-  int med = (pix[59 * 160 + 79] + pix[59 * 160 + 80] + pix[60 * 160 + 79] + pix[60 * 160 + 80]) / 4;
+  int med = (pix[59 * THERMAL_FRAME_WIDTH + 79] + pix[59 * THERMAL_FRAME_WIDTH + 80] + pix[60 * THERMAL_FRAME_WIDTH + 79] + pix[60 * THERMAL_FRAME_WIDTH + 80]) / 4;
   sprintf(st2, " %.1f/%.1f/%.1f'C", raw2temperature(min), raw2temperature(med), raw2temperature(max));
   strcat(st1, st2);
 
@@ -399,10 +399,10 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
   strncpy(st2, st1, MAX_CHRS);
   // write zero to string !!
   st2[MAX_CHRS - 1] = '\0';
-  font_write(fb_proc, 1, 120, st2);
+  // font_write(fb_proc, 1, 120, st2);
 
   // show crosshairs, remove if required
-  font_write(fb_proc, 80 - 2, 60 - 3, "+");
+  // font_write(fb_proc, 80 - 2, 60 - 3, "+");
 
   maxx -= 4;
   maxy -= 4;
@@ -416,22 +416,22 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
   if (maxy > 110)
     maxy = 110;
 
-  font_write(fb_proc, 160 - 6, maxy, "<");
-  font_write(fb_proc, maxx, 120 - 8, "|");
+  // font_write(fb_proc, 160 - 6, maxy, "<");
+  // font_write(fb_proc, maxx, 120 - 8, "|");
 
-  for (y = 0; y < 128; ++y)
+  for (y = 0; y < THERMAL_FRAME_HEIGHT; ++y)
   {
-    for (x = 0; x < 160; ++x)
+    for (x = 0; x < THERMAL_FRAME_WIDTH; ++x)
     {
 
       // fb_proc is the gray scale frame buffer
-      v = fb_proc[y * 160 + x]; // unsigned char!!
+      v = fb_proc[y * THERMAL_FRAME_WIDTH + x]; // unsigned char!!
 
       // fb_proc2 is an 24bit RGB buffer
 
-      fb_proc2[3 * y * 160 + x * 3] = colormap[3 * v];           // unsigned char!!
-      fb_proc2[(3 * y * 160 + x * 3) + 1] = colormap[3 * v + 1]; // unsigned char!!
-      fb_proc2[(3 * y * 160 + x * 3) + 2] = colormap[3 * v + 2]; // unsigned char!!
+      fb_proc2[3 * y * THERMAL_FRAME_WIDTH + x * 3] = colormap[3 * v];           // unsigned char!!
+      fb_proc2[(3 * y * THERMAL_FRAME_WIDTH + x * 3) + 1] = colormap[3 * v + 1]; // unsigned char!!
+      fb_proc2[(3 * y * THERMAL_FRAME_WIDTH + x * 3) + 2] = colormap[3 * v + 2]; // unsigned char!!
 
       // buf85[28 + ThermalSize + y*640 + x*480] = 0;
     }
@@ -496,21 +496,18 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
     int thermal_pixel_size = 4;
     int x_scaled, y_scaled;
 
-    int resized_width = 640;
-    int resized_height = 480;
-
     // std::vector<unsigned char> vectorBuffer(bmp_buffer, bmp_buffer + bmp_size);
 
     cv::Mat colored_img(1080, 1440, CV_8UC3, bmp_buffer, 1440*3);
-    cv::Mat thermal_img(128, 160, CV_8UC3, fb_proc2, 160*3);
+    cv::Mat thermal_img(THERMAL_FRAME_HEIGHT, THERMAL_FRAME_WIDTH, CV_8UC3, fb_proc2, THERMAL_FRAME_WIDTH*3);
 
     // img = cv::imdecode(mat, CV_LOAD_IMAGE_COLOR);
 
     if (colored_img.empty())
       printf("img empty!\n");
 
-    cv::resize(colored_img, colored_img, cv::Size(resized_width, resized_height));
-    cv::resize(thermal_img, thermal_img, cv::Size(resized_width, resized_height));
+    cv::resize(colored_img, colored_img, cv::Size(VISUAL_FRAME_WIDTH, VISUAL_FRAME_HEIGHT));
+    cv::resize(thermal_img, thermal_img, cv::Size(VISUAL_FRAME_WIDTH, VISUAL_FRAME_HEIGHT));
 
     double alpha = 0.5, beta;
     beta = ( 1.0 - alpha );
@@ -528,7 +525,7 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
 
     // printf("img nChznnels: %d", mat.);
 
-    // for (y = 0; y < 128; ++y)
+    // for (y = 0; y < THERMAL_FRAME_HEIGHT; ++y)
     // {
     //   for (y_scaled = y * thermal_pixel_size; y_scaled < (y + 1) * thermal_pixel_size; ++y_scaled)
     //   {
@@ -548,7 +545,7 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
     // }
 
     // write(fdwr1, bmp_buffer, bmp_size); // jpg Visual Image
-    write(fdwr1, colored_img.data, resized_width*resized_height*3); // jpg Visual Image
+    write(fdwr1, colored_img.data, VISUAL_FRAME_WIDTH*VISUAL_FRAME_HEIGHT*3); // jpg Visual Image
     free(bmp_buffer);
     free(bmp_buffer2);
   }
