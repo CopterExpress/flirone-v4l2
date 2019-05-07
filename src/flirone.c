@@ -506,19 +506,29 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
     if (colored_img.empty())
       printf("img empty!\n");
 
+    cv::Rect myROI(30, 50, 590, 420);
+
     cv::resize(colored_img, colored_img, cv::Size(VISUAL_FRAME_WIDTH, VISUAL_FRAME_HEIGHT));
+    colored_img = colored_img(myROI);
+    cv::resize(colored_img, colored_img, cv::Size(VISUAL_FRAME_WIDTH, VISUAL_FRAME_HEIGHT));
+
     cv::resize(thermal_img, thermal_img, cv::Size(VISUAL_FRAME_WIDTH, VISUAL_FRAME_HEIGHT));
 
-    double alpha = 0.5, beta;
+    double alpha = 0.1, beta;
     beta = ( 1.0 - alpha );
 
-    // thermal_img.copyTo(colored_img(cv::Rect(0, 0, thermal_img.cols, thermal_img.rows)));
-    cv::addWeighted(colored_img, alpha, thermal_img, beta, 0.0, colored_img);
+    // Corner detection on a visual
+    int lowThreshold = 20;
+    cv::cvtColor(colored_img, colored_img, cv::COLOR_RGB2GRAY);
+    cv::blur(colored_img, colored_img, cv::Size(3,3) );
+    cv::Canny(colored_img, colored_img, lowThreshold, lowThreshold*3, 3);
+    cv::cvtColor(colored_img, colored_img, cv::COLOR_GRAY2RGB);
 
-    // int lowThreshold = 20;
-    // cv::cvtColor( mat, mat, cv::COLOR_RGB2GRAY );
-    // cv::blur(mat, mat, cv::Size(3,3) );
-    // cv::Canny( mat, mat, lowThreshold, lowThreshold*3, 3);
+    // Place thermal on a corner of visual
+    // thermal_img.copyTo(colored_img(cv::Rect(0, 0, thermal_img.cols, thermal_img.rows))); 
+
+    // Mix thermal with visual
+    cv::addWeighted(colored_img, alpha, thermal_img, beta, 0.0, colored_img);
 
     // cv::imshow("xz", mat);
     // cv::waitKey(0);
