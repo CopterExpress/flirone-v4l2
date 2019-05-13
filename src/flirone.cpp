@@ -35,6 +35,8 @@
 
 #include "plank.h"
 
+#include "font5x7.h"
+
 // -- define v4l2 ---------------
 #include <linux/videodev2.h>
 #include <sys/ioctl.h>
@@ -58,49 +60,92 @@
 #define FRAME_FORMAT1 V4L2_PIX_FMT_RGB24 //MJPEG
 #define FRAME_FORMAT2 V4L2_PIX_FMT_RGB24
 
-struct v4l2_capability vid_caps0;
-struct v4l2_capability vid_caps1;
-struct v4l2_capability vid_caps2;
-
-struct v4l2_format vid_format0;
-struct v4l2_format vid_format1;
-struct v4l2_format vid_format2;
-
-size_t framesize0;
-size_t linewidth0;
-
-size_t framesize1;
-size_t linewidth1;
-
-size_t framesize2;
-size_t linewidth2;
-
-const char *video_device0 = VIDEO_DEVICE0;
-const char *video_device1 = VIDEO_DEVICE1;
-const char *video_device2 = VIDEO_DEVICE2;
-
-int fdwr0 = 0;
-int fdwr1 = 0;
-int fdwr2 = 0;
-
-// -- end define v4l2 ---------------
-
 #define VENDOR_ID 0x09cb
 #define PRODUCT_ID 0x1996
 
-static struct libusb_device_handle *devh = NULL;
-int filecount = 0;
-struct timeval t1, t2;
-long long fps_t;
-
-int FFC = 0; // detect FFC
-
-// -- buffer for EP 0x85 chunks ---------------
 #define BUF85SIZE 1048576 // size got from android app
-int buf85pointer = 0;
-unsigned char buf85[BUF85SIZE];
 
-void print_format(struct v4l2_format *vid_format)
+class flirone_processor
+{
+  public:
+  flirone_processor();
+  ~flirone_processor();
+
+  private:
+  struct v4l2_capability vid_caps0;
+  struct v4l2_capability vid_caps1;
+  struct v4l2_capability vid_caps2;
+
+  struct v4l2_format vid_format0;
+  struct v4l2_format vid_format1;
+  struct v4l2_format vid_format2;
+
+  size_t framesize0;
+  size_t linewidth0;
+
+  size_t framesize1;
+  size_t linewidth1;
+
+  size_t framesize2;
+  size_t linewidth2;
+
+  char *video_device0;
+  char *video_device1;
+  char *video_device2;
+
+  int fdwr0;
+  int fdwr1;
+  int fdwr2;
+
+  // -- end define v4l2 ---------------
+
+  struct libusb_device_handle *devh = NULL;
+  int filecount;
+  struct timeval t1, t2;
+  long long fps_t;
+
+  int FFC; // detect FFC
+
+  // -- buffer for EP 0x85 chunks ---------------
+  int buf85pointer;
+  unsigned char buf85[BUF85SIZE];
+
+  void print_format(struct v4l2_format *vid_format);
+  void font_write(unsigned char *fb, int x, int y, const char *string);
+  double raw2temperature(unsigned short RAW);
+  void startv4l2();
+  void closev4l2();
+  void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char buf[], unsigned char *colormap);
+  int find_lvr_flirusb(void);
+  void print_bulk_result(char ep[], char EP_error[], int r, int actual_length, unsigned char buf[]);
+  int EPloop(unsigned char *colormap);
+
+};
+
+flirone_processor::flirone_processor()
+{
+  fdwr0 = 0;
+  fdwr1 = 0;
+  fdwr2 = 0;
+
+  *video_device0 = VIDEO_DEVICE0;
+  *video_device1 = VIDEO_DEVICE1;
+  *video_device2 = VIDEO_DEVICE2;
+
+  // *devh = NULL;
+  filecount = 0;
+
+  FFC = 0;
+
+  buf85pointer = 0;
+}
+
+flirone_processor::~flirone_processor()
+{
+    
+}
+
+void flirone_processor::print_format(struct v4l2_format *vid_format)
 {
   printf("     vid_format->type                =%d\n", vid_format->type);
   printf("     vid_format->fmt.pix.width       =%d\n", vid_format->fmt.pix.width);
@@ -113,8 +158,8 @@ void print_format(struct v4l2_format *vid_format)
 }
 
 //#include "font.h"
-#include "font5x7.h"
-void font_write(unsigned char *fb, int x, int y, const char *string)
+
+void flirone_processor::font_write(unsigned char *fb, int x, int y, const char *string)
 {
   int rx, ry;
   while (*string)
@@ -135,7 +180,7 @@ void font_write(unsigned char *fb, int x, int y, const char *string)
   }
 }
 
-double raw2temperature(unsigned short RAW)
+double flirone_processor::raw2temperature(unsigned short RAW)
 {
   // mystery correction factor
   RAW *= 4;
@@ -147,44 +192,13 @@ double raw2temperature(unsigned short RAW)
   return PlanckB / log(PlanckR1 / (PlanckR2 * (RAWobj + PlanckO)) + PlanckF) - 273.15;
 }
 
-void startv4l2()
+void flirone_processor::startv4l2()
 {
   int ret_code = 0;
 
   int i;
   int k = 1;
-  /*     
-//open video_device0
-     printf("using output device: %s\n", video_device0);
-     
-     fdwr0 = open(video_device0, O_RDWR);
-     assert(fdwr0 >= 0);
 
-     ret_code = ioctl(fdwr0, VIDIOC_QUERYCAP, &vid_caps0);
-     assert(ret_code != -1);
-
-     memset(&vid_format0, 0, sizeof(vid_format0));
-
-     ret_code = ioctl(fdwr0, VIDIOC_G_FMT, &vid_format0);
-
-     linewidth0=FRAME_WIDTH0;
-     framesize0=FRAME_WIDTH0*FRAME_HEIGHT0*1; // 8 Bit
-
-     vid_format0.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-     vid_format0.fmt.pix.width = FRAME_WIDTH0;
-     vid_format0.fmt.pix.height = FRAME_HEIGHT0;
-     vid_format0.fmt.pix.pixelformat = FRAME_FORMAT0;
-     vid_format0.fmt.pix.sizeimage = framesize0;
-     vid_format0.fmt.pix.field = V4L2_FIELD_NONE;
-     vid_format0.fmt.pix.bytesperline = linewidth0;
-     vid_format0.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
-
-     // set data format
-     ret_code = ioctl(fdwr0, VIDIOC_S_FMT, &vid_format0);
-     assert(ret_code != -1);
-
-     print_format(&vid_format0);
-*/
   //open video_device1
   printf("using output device: %s\n", video_device1);
 
@@ -249,14 +263,14 @@ void startv4l2()
 }
 
 // unused
-void closev4l2()
+void flirone_processor::closev4l2()
 {
   //     close(fdwr0);
   close(fdwr1);
   close(fdwr2);
 }
 
-void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char buf[], unsigned char *colormap)
+void flirone_processor::vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char buf[], unsigned char *colormap)
 {
   // error handler
   time_t now1;
@@ -587,13 +601,13 @@ void vframe(char ep[], char EP_error[], int r, int actual_length, unsigned char 
   free(fb_proc2); // visible jpg
 }
 
-static int find_lvr_flirusb(void)
+int flirone_processor::find_lvr_flirusb(void)
 {
   devh = libusb_open_device_with_vid_pid(NULL, VENDOR_ID, PRODUCT_ID);
   return devh ? 0 : -EIO;
 }
 
-void print_bulk_result(char ep[], char EP_error[], int r, int actual_length, unsigned char buf[])
+void flirone_processor::print_bulk_result(char ep[], char EP_error[], int r, int actual_length, unsigned char buf[])
 {
   time_t now1;
   int i;
@@ -639,7 +653,7 @@ void print_bulk_result(char ep[], char EP_error[], int r, int actual_length, uns
   }
 }
 
-int EPloop(unsigned char *colormap)
+int flirone_processor::EPloop(unsigned char *colormap)
 {
   int i, r = 1;
   r = libusb_init(NULL);
@@ -975,8 +989,8 @@ int main(int argc, char **argv)
   fread(colormap, sizeof(unsigned char), 768, fp); // read 256 rgb values
   fclose(fp);
 
-  while (1)
-  {
-    EPloop(colormap);
-  }
+  // while (1)
+  // {
+  //   EPloop(colormap);
+  // }
 }
